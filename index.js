@@ -1,13 +1,16 @@
+import express from 'express';
 import TelegramBot from 'node-telegram-bot-api';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import { setupReminders } from './utils/scheduler.js';
 
 dotenv.config();
+
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
+// РљРѕРјР°РЅРґС‹
 bot.onText(/\/start/, msg => {
-  bot.sendMessage(msg.chat.id, '?? Привет! Я бот, помогающий тебе следовать расписанию. Используй /plan_today для плана на сегодня.');
+  bot.sendMessage(msg.chat.id, 'рџ‘‹ РџСЂРёРІРµС‚! РЇ Р±РѕС‚, РїРѕРјРѕРіР°СЋС‰РёР№ С‚РµР±Рµ СЃР»РµРґРѕРІР°С‚СЊ СЂР°СЃРїРёСЃР°РЅРёСЋ. РСЃРїРѕР»СЊР·СѓР№ /plan_today РґР»СЏ РїР»Р°РЅР° РЅР° СЃРµРіРѕРґРЅСЏ.');
   setupReminders(bot, msg.chat.id);
 });
 
@@ -15,8 +18,8 @@ bot.onText(/\/plan_today/, msg => {
   const schedule = JSON.parse(fs.readFileSync('./schedule.json', 'utf-8'));
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
   const tasks = schedule[today] || [];
-  const formatted = tasks.map(t => `?? ${t.time} — ${t.task}`).join('\n') || 'Сегодня задач нет.';
-  bot.sendMessage(msg.chat.id, `?? План на сегодня:\n${formatted}`);
+  const formatted = tasks.map(t => `рџ•’ ${t.time} вЂ” ${t.task}`).join('\n') || 'РЎРµРіРѕРґРЅСЏ Р·Р°РґР°С‡ РЅРµС‚.';
+  bot.sendMessage(msg.chat.id, `рџ“… РџР»Р°РЅ РЅР° СЃРµРіРѕРґРЅСЏ:\n${formatted}`);
 });
 
 bot.onText(/\/next_task/, msg => {
@@ -33,8 +36,20 @@ bot.onText(/\/next_task/, msg => {
   });
 
   if (next) {
-    bot.sendMessage(msg.chat.id, `? Следующее: ${next.time} — ${next.task}`);
+    bot.sendMessage(msg.chat.id, `вЏ­ РЎР»РµРґСѓСЋС‰РµРµ: ${next.time} вЂ” ${next.task}`);
   } else {
-    bot.sendMessage(msg.chat.id, '? Все задачи на сегодня завершены!');
+    bot.sendMessage(msg.chat.id, 'вњ… Р’СЃРµ Р·Р°РґР°С‡Рё РЅР° СЃРµРіРѕРґРЅСЏ Р·Р°РІРµСЂС€РµРЅС‹!');
   }
+});
+
+// Express-Р·Р°РіР»СѓС€РєР° РґР»СЏ Render
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+  res.send('Р‘РѕС‚ СЂР°Р±РѕС‚Р°РµС‚ вњ…');
+});
+
+app.listen(PORT, () => {
+  console.log(`вњ… РЎРµСЂРІРµСЂ СЃР»СѓС€Р°РµС‚ РїРѕСЂС‚ ${PORT}`);
 });
