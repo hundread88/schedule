@@ -6,6 +6,12 @@ import { setupReminders } from './utils/scheduler.js';
 
 dotenv.config();
 
+// Удалим webhook, если он был установлен ранее
+bot.deleteWebhook()
+  .then(() => console.log('Webhook cleared.'))
+  .catch(err => console.log('Failed to delete webhook:', err.message));
+
+
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
 // Команды
