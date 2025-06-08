@@ -2,61 +2,100 @@ import TelegramBot from 'node-telegram-bot-api';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import express from 'express';
-import { setupReminders } from './utils/scheduler.js';
+import { DateTime } from 'luxon';
+import { startScheduler } from './utils/scheduler.js';
 
 dotenv.config();
-const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
+
+// --- Конфигурация ---
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const PORT = process.env.PORT || 3000;
+const CHATS_FILE = './chats.json';
+const SCHEDULE_FILE = './schedule.json';
+const TIMEZONE = 'Asia/Tbilisi'; // Укажите ваш часовой пояс (GMT+4)
+
+// --- Инициализация ---
+const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 const app = express();
 
-// Web server to keep Render happy
-app.get('/', (req, res) => {
-  res.send('Bot is running');
-});
-app.listen(process.env.PORT || 3000, () => {
-  console.log('Server is listening...');
-});
-
-// Загрузка сохранённых chatId
+// --- Хранилище пользователей ---
 let chatIds = new Set();
-if (fs.existsSync('./chats.json')) {
-  const stored = JSON.parse(fs.readFileSync('./chats.json'));
-  chatIds = new Set(stored);
-  chatIds.forEach(id => setupReminders(bot, id));
+
+// Загрузка сохранённых chatId из файла
+try {
+  if (fs.existsSync(CHATS_FILE)) {
+    const storedIds = JSON.parse(fs.readFileSync(CHATS_FILE));
+    chatIds = new Set(storedIds);
+    console.log(`Loaded ${chatIds.size} users from file.`);
+  }
+} catch (error) {
+  console.error('Could not load chat IDs:', error);
 }
 
-// Basic commands
+// Функция для сохранения chatId
+function saveChatIds() {
+  fs.writeFileSync(CHATS_FILE, JSON.stringify([...chatIds]));
+}
+
+// --- Запуск планировщика (ЕДИНОЖДЫ) ---
+// Передаем в планировщик экземпляр бота и функцию, 
+// которая всегда будет возвращать актуальный список пользователей.
+startScheduler(bot, () => chatIds);
+
+
+// --- Веб-сервер для хостинга (Render, Heroku и т.д.) ---
+app.get('/', (req, res) => {
+  res.send('Bot is running smoothly!');
+});
+app.listen(PORT, () => {
+  console.log(`Server is listening on port ${PORT}...`);
+});
+
+
+// --- Команды бота ---
+
 bot.onText(/\/start/, msg => {
   const chatId = msg.chat.id;
-  bot.sendMessage(chatId, '👋 Привет! Я бот, помогающий тебе следовать расписанию. Используй /plan_today для плана на сегодня.');
-  chatIds.add(chatId);
-  fs.writeFileSync('./chats.json', JSON.stringify([...chatIds]));
-  setupReminders(bot, chatId);
+  bot.sendMessage(chatId, '👋 Привет! Я бот, помогающий тебе следовать расписанию. Я буду присылать уведомления о задачах.\n\nИспользуй /plan_today для просмотра плана на сегодня и /next_task для следующей задачи.');
+  
+  if (!chatIds.has(chatId)) {
+    chatIds.add(chatId);
+    saveChatIds();
+    console.log(`New user added: ${chatId}. Total users: ${chatIds.size}`);
+  }
 });
 
 bot.onText(/\/plan_today/, msg => {
-  const schedule = JSON.parse(fs.readFileSync('./schedule.json', 'utf-8'));
-  const today = new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+  const now = DateTime.now().setZone(TIMEZONE);
+  const today = now.toFormat('cccc').toLowerCase(); // e.g., 'sunday'
+  
+  const schedule = JSON.parse(fs.readFileSync(SCHEDULE_FILE, 'utf-8'));
   const tasks = schedule[today] || [];
-  const formatted = tasks.map(t => `📌 ${t.time} — ${t.task}`).join('\n') || 'Сегодня задач нет.';
-  bot.sendMessage(msg.chat.id, `🗓 План на сегодня:\n${formatted}`);
+  
+  const formatted = tasks.map(t => `📌 ${t.time} — ${t.task}`).join('\n');
+  const message = `🗓 **План на сегодня (${now.toFormat('dd.MM.yyyy')})**:\n\n${formatted || 'Сегодня задач нет.'}`;
+  
+  bot.sendMessage(msg.chat.id, message, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/next_task/, msg => {
-  const now = new Date();
-  const currentTime = now.getHours() * 60 + now.getMinutes();
-
-  const schedule = JSON.parse(fs.readFileSync('./schedule.json', 'utf-8'));
-  const today = now.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+  const now = DateTime.now().setZone(TIMEZONE);
+  const today = now.toFormat('cccc').toLowerCase(); // 'sunday'
+  
+  const schedule = JSON.parse(fs.readFileSync(SCHEDULE_FILE, 'utf-8'));
   const tasks = schedule[today] || [];
 
-  const next = tasks.find(t => {
-    const [h, m] = t.time.split(':').map(Number);
-    return h * 60 + m > currentTime;
+  const nextTask = tasks.find(task => {
+    const taskTime = DateTime.fromFormat(task.time, 'HH:mm', { zone: TIMEZONE });
+    // Сравниваем только время, дата будет сегодняшней
+    return taskTime > now;
   });
 
-  if (next) {
-    bot.sendMessage(msg.chat.id, `⏭ Следующее: ${next.time} — ${next.task}`);
+  if (nextTask) {
+    bot.sendMessage(msg.chat.id, `⏭ **Следующая задача:**\n${nextTask.time} — ${nextTask.task}`, { parse_mode: 'Markdown' });
   } else {
-    bot.sendMessage(msg.chat.id, '✅ Все задачи на сегодня завершены!');
+    bot.sendMessage(msg.chat.id, '✅ Все задачи на сегодня выполнены!');
   }
 });
+
+console.log('Bot has been started successfully!');
