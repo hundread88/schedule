@@ -1,31 +1,38 @@
 import fs from 'fs';
+import { DateTime } from 'luxon';
 
-let scheduledToday = {}; // Для отслеживания отправленных задач
+const TIMEZONE = 'Asia/Dubai'; // GMT+4
+let notified = {};
 
 export function setupReminders(bot, chatId) {
-  const interval = setInterval(() => {
-    const now = new Date();
-    const currentTime = now.toTimeString().slice(0, 5); // 'HH:MM'
-    const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
-    const today = days[now.getDay()];
+  setInterval(() => {
+    const now = DateTime.now().setZone(TIMEZONE);
+    const currentTime = now.toFormat('HH:mm');
+    const today = now.toFormat('cccc').toLowerCase(); // e.g. 'monday'
 
     const schedule = JSON.parse(fs.readFileSync('./schedule.json', 'utf-8'));
     const tasks = schedule[today] || [];
 
     tasks.forEach(task => {
-      if (task.time === currentTime) {
-        const key = `${chatId}_${today}_${task.time}`;
-        if (!scheduledToday[key]) {
-          bot.sendMessage(chatId, `🔔 Напоминание: ${task.time} — ${task.task}`);
-          scheduledToday[key] = true;
-        }
+      const taskTime = DateTime.fromFormat(task.time, 'HH:mm', { zone: TIMEZONE });
+      const diff = taskTime.diff(now, 'minutes').toObject().minutes;
+      const key = `${chatId}_${today}_${task.time}`;
+
+      // Напоминание за 5 минут
+      if (diff > 4 && diff <= 5 && !notified[key]) {
+        bot.sendMessage(chatId, `⏳ Через 5 минут: ${task.time} — ${task.task}`);
+        notified[key] = true;
+      }
+
+      // Напоминание в момент задачи
+      if (Math.abs(diff) < 1 && !notified[key + '_now']) {
+        bot.sendMessage(chatId, `🔔 Сейчас: ${task.time} — ${task.task}`);
+        notified[key + '_now'] = true;
       }
     });
 
-    // Сброс списка отправленных задач на следующий день
-    const resetHour = 6; // 6:00 утра
-    if (now.getHours() === resetHour && now.getMinutes() === 0) {
-      scheduledToday = {};
+    if (currentTime === '06:00') {
+      notified = {};
     }
-  }, 60 * 1000); // каждую минуту
+  }, 60000);
 }
