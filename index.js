@@ -16,23 +16,35 @@ app.listen(process.env.PORT || 3000, () => {
   console.log('Server is listening...');
 });
 
+// Загрузка сохранённых chatId
+let chatIds = new Set();
+if (fs.existsSync('./chats.json')) {
+  const stored = JSON.parse(fs.readFileSync('./chats.json'));
+  chatIds = new Set(stored);
+  chatIds.forEach(id => setupReminders(bot, id));
+}
+
 // Basic commands
 bot.onText(/\/start/, msg => {
-  bot.sendMessage(msg.chat.id, '👋 Привет! Я бот, помогающий тебе следовать расписанию. Используй /plan_today для плана на сегодня.');
-  setupReminders(bot, msg.chat.id);
+  const chatId = msg.chat.id;
+  bot.sendMessage(chatId, '👋 Привет! Я бот, помогающий тебе следовать расписанию. Используй /plan_today для плана на сегодня.');
+  chatIds.add(chatId);
+  fs.writeFileSync('./chats.json', JSON.stringify([...chatIds]));
+  setupReminders(bot, chatId);
 });
 
 bot.onText(/\/plan_today/, msg => {
   const schedule = JSON.parse(fs.readFileSync('./schedule.json', 'utf-8'));
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
   const tasks = schedule[today] || [];
-  const formatted = tasks.map(t => `🕒 ${t.time} — ${t.task}`).join('\n') || 'Сегодня задач нет.';
-  bot.sendMessage(msg.chat.id, `📅 План на сегодня:\n${formatted}`);
+  const formatted = tasks.map(t => `📌 ${t.time} — ${t.task}`).join('\n') || 'Сегодня задач нет.';
+  bot.sendMessage(msg.chat.id, `🗓 План на сегодня:\n${formatted}`);
 });
 
 bot.onText(/\/next_task/, msg => {
   const now = new Date();
   const currentTime = now.getHours() * 60 + now.getMinutes();
+
   const schedule = JSON.parse(fs.readFileSync('./schedule.json', 'utf-8'));
   const today = now.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
   const tasks = schedule[today] || [];
@@ -43,7 +55,7 @@ bot.onText(/\/next_task/, msg => {
   });
 
   if (next) {
-    bot.sendMessage(msg.chat.id, `👉 Следующее: ${next.time} — ${next.task}`);
+    bot.sendMessage(msg.chat.id, `⏭ Следующее: ${next.time} — ${next.task}`);
   } else {
     bot.sendMessage(msg.chat.id, '✅ Все задачи на сегодня завершены!');
   }
