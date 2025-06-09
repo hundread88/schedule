@@ -21,8 +21,8 @@ app.use(express.json());
 
 // --- Настройка Webhook ---
 bot.setWebHook(`${WEBHOOK_URL}/bot${BOT_TOKEN}`)
-  .then(() => console.log(`[SETUP] Webhook set.`))
-  .catch(err => console.error('[ERROR] Webhook error:', err));
+  .then(() => console.log(`[SETUP] Webhook successfully set.`))
+  .catch(err => console.error('[ERROR] Critical error setting webhook:', err));
 
 app.post(`/bot${BOT_TOKEN}`, (req, res) => {
   bot.processUpdate(req.body);
@@ -30,14 +30,13 @@ app.post(`/bot${BOT_TOKEN}`, (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`[SETUP] Server listening on port ${PORT}...`);
+  console.log(`[SETUP] Server is listening on port ${PORT}...`);
 });
 
 // --- Вспомогательные функции для работы с расписанием ---
 const readSchedule = () => {
     try {
         if (!fs.existsSync(SCHEDULE_FILE)) {
-            // Если файла нет, создаем пустой объект
             const initialSchedule = { monday: [], tuesday: [], wednesday: [], thursday: [], friday: [], saturday: [], sunday: [] };
             fs.writeFileSync(SCHEDULE_FILE, JSON.stringify(initialSchedule, null, 2));
             return initialSchedule;
@@ -46,18 +45,17 @@ const readSchedule = () => {
         return JSON.parse(data);
     } catch (e) {
         console.error("Error reading or parsing schedule file:", e);
-        return {}; // Возвращаем пустой объект в случае ошибки
+        return {};
     }
 };
 
 const writeSchedule = (schedule) => {
     try {
-        fs.writeFileSync(SCHEDULE_FILE, JSON.stringify(schedule, null, 2)); // null, 2 для красивого форматирования
+        fs.writeFileSync(SCHEDULE_FILE, JSON.stringify(schedule, null, 2));
     } catch (e) {
         console.error("Error writing schedule file:", e);
     }
 };
-
 
 // --- Логика планировщика и хранилища ---
 let chatIds = new Set();
@@ -68,23 +66,18 @@ try {
 } catch (error) {
   console.error('[ERROR] Could not load chat IDs:', error);
 }
-
 const saveChatIds = () => fs.writeFileSync(CHATS_FILE, JSON.stringify([...chatIds]));
 
 function startScheduler() {
     console.log('[SCHEDULER] Scheduler started.');
     const sentNotifications = new Set();
-
     setInterval(() => {
         const now = DateTime.now().setZone(TIMEZONE);
         const today = now.toFormat('cccc').toLowerCase();
         const currentTime = now.toFormat('HH:mm');
-
         if (chatIds.size === 0) return;
-
-        const schedule = readSchedule(); // Читаем актуальное расписание каждую минуту
+        const schedule = readSchedule();
         const tasks = schedule[today] || [];
-
         for (const task of tasks) {
             if (task.time === currentTime) {
                 for (const chatId of chatIds) {
@@ -98,16 +91,12 @@ function startScheduler() {
                 }
             }
         }
-
         if (currentTime === '00:00') {
             sentNotifications.clear();
         }
-
     }, 60 * 1000);
 }
-
 startScheduler();
-
 
 // --- Команды бота ---
 
@@ -115,7 +104,6 @@ bot.onText(/\/start/, msg => {
   const chatId = msg.chat.id;
   const helpText = `
 👋 **Привет! Я твой бот-планировщик.**
-
 Я буду присылать напоминания о задачах в нужное время.
 
 **Основные команды:**
@@ -133,30 +121,24 @@ bot.onText(/\/start/, msg => {
 Дни недели: \`monday, tuesday, wednesday, thursday, friday, saturday, sunday\`.
   `;
   bot.sendMessage(chatId, helpText, { parse_mode: 'Markdown' });
-
   if (!chatIds.has(chatId)) {
     chatIds.add(chatId);
     saveChatIds();
   }
 });
 
-// --- Новые команды для управления расписанием ---
-
+// === Команды управления расписанием ===
 bot.onText(/\/add (\w+) (\d{2}:\d{2}) (.+)/, (msg, match) => {
     const chatId = msg.chat.id;
     const day = match[1].toLowerCase();
     const time = match[2];
     const task = match[3];
-
     const schedule = readSchedule();
     if (!schedule.hasOwnProperty(day)) {
         return bot.sendMessage(chatId, `❌ Неверный день недели. Используйте: monday, tuesday, и т.д.`);
     }
-
     schedule[day].push({ time, task });
-    // Сортируем задачи по времени для порядка
     schedule[day].sort((a, b) => a.time.localeCompare(b.time));
-    
     writeSchedule(schedule);
     bot.sendMessage(chatId, `✅ Задача "${task}" добавлена на ${day} в ${time}.`);
 });
@@ -164,17 +146,14 @@ bot.onText(/\/add (\w+) (\d{2}:\d{2}) (.+)/, (msg, match) => {
 bot.onText(/\/list (\w+)/, (msg, match) => {
     const chatId = msg.chat.id;
     const day = match[1].toLowerCase();
-
     const schedule = readSchedule();
     if (!schedule.hasOwnProperty(day)) {
         return bot.sendMessage(chatId, `❌ Неверный день недели.`);
     }
-
     const tasks = schedule[day];
-    if (tasks.length === 0) {
+    if (!tasks || tasks.length === 0) {
         return bot.sendMessage(chatId, `На ${day} задач нет.`);
     }
-
     const formattedList = tasks.map((t, index) => `${index + 1}. ${t.time} - ${t.task}`).join('\n');
     bot.sendMessage(chatId, `**План на ${day}:**\n${formattedList}`, { parse_mode: 'Markdown' });
 });
@@ -182,57 +161,48 @@ bot.onText(/\/list (\w+)/, (msg, match) => {
 bot.onText(/\/del (\w+) (\d+)/, (msg, match) => {
     const chatId = msg.chat.id;
     const day = match[1].toLowerCase();
-    const index = parseInt(match[2], 10) - 1; // Пользователь вводит номер 1, 2, 3..., а в массиве индексы 0, 1, 2...
-
+    const index = parseInt(match[2], 10) - 1;
     const schedule = readSchedule();
-    if (!schedule.hasOwnProperty(day)) {
+    if (!schedule.hasOwnProperty(day) || !schedule[day]) {
         return bot.sendMessage(chatId, `❌ Неверный день недели.`);
     }
-
     if (index < 0 || index >= schedule[day].length) {
         return bot.sendMessage(chatId, `❌ Неверный номер задачи. Используйте /list ${day}, чтобы увидеть доступные номера.`);
     }
-
     const removedTask = schedule[day].splice(index, 1)[0];
     writeSchedule(schedule);
-
     bot.sendMessage(chatId, `🗑️ Задача "${removedTask.task}" удалена.`);
 });
 
-// Старые команды `/plan_today` и `/next_task` остаются без изменений
 
-bot.onText(/\/plan_today/, msg => {
-  const now = DateTime.now().setZone(TIMEZONE);
-  const today = now.toFormat('cccc').toLowerCase();
-  
-  const schedule = JSON.parse(fs.readFileSync(SCHEDULE_FILE, 'utf-8'));
-  const tasks = schedule[today] || [];
-  
-  const formatted = tasks.map(t => `📌 ${t.time} — ${t.task}`).join('\n');
-  const message = `🗓 **План на сегодня (${now.toFormat('dd.MM.yyyy')})**:\n\n${formatted || 'Сегодня задач нет.'}`;
-  
-  bot.sendMessage(msg.chat.id, message, { parse_mode: 'Markdown' });
+// === Основные команды просмотра расписания (ПОЛНОСТЬЮ ВОССТАНОВЛЕНЫ) ===
+bot.onText(/\/plan_today/, (msg) => {
+    const chatId = msg.chat.id;
+    const now = DateTime.now().setZone(TIMEZONE);
+    const today = now.toFormat('cccc').toLowerCase();
+    const schedule = readSchedule();
+    const tasks = schedule[today] || [];
+    const formatted = tasks.map(t => `📌 ${t.time} — ${t.task}`).join('\n');
+    const message = `🗓 **План на сегодня (${now.toFormat('dd.MM.yyyy')})**:\n\n${formatted || 'Сегодня задач нет.'}`;
+    bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
 });
 
-bot.onText(/\/next_task/, msg => {
-  const now = DateTime.now().setZone(TIMEZONE);
-  const today = now.toFormat('cccc').toLowerCase();
-  
-  const schedule = JSON.parse(fs.readFileSync(SCHEDULE_FILE, 'utf-8'));
-  const tasks = schedule[today] || [];
-
-  const nextTask = tasks.find(task => {
-    const taskTime = DateTime.fromFormat(task.time, 'HH:mm', { zone: TIMEZONE });
-    return taskTime > now;
-  });
-
-  if (nextTask) {
-    bot.sendMessage(msg.chat.id, `⏭ **Следующая задача:**\n${nextTask.time} — ${nextTask.task}`, { parse_mode: 'Markdown' });
-  } else {
-    bot.sendMessage(msg.chat.id, '✅ Все задачи на сегодня выполнены!');
-  }
+bot.onText(/\/next_task/, (msg) => {
+    const chatId = msg.chat.id;
+    const now = DateTime.now().setZone(TIMEZONE);
+    const today = now.toFormat('cccc').toLowerCase();
+    const schedule = readSchedule();
+    const tasks = schedule[today] || [];
+    const nextTask = tasks.find(task => {
+        const taskTime = DateTime.fromFormat(task.time, 'HH:mm', { zone: TIMEZONE });
+        return taskTime > now;
+    });
+    if (nextTask) {
+        bot.sendMessage(chatId, `⏭ **Следующая задача:**\n${nextTask.time} — ${nextTask.task}`, { parse_mode: 'Markdown' });
+    } else {
+        bot.sendMessage(chatId, '✅ Все задачи на сегодня выполнены!');
+    }
 });
 
-console.log('[SETUP] Bot is fully configured and running.');
-```
 
+console.log('[SETUP] Bot is fully configured and starting up.');
