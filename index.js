@@ -83,10 +83,9 @@ function startScheduler() {
                 return;
             }
 
-            console.log(`[DEBUG] Checking ${tasks.length} tasks for ${today}...`);
+            //console.log(`[DEBUG] Checking ${tasks.length} tasks for ${today}...`);
 
             for (const task of tasks) {
-                // Сравнение времени из расписания с текущим временем
                 if (task.time === currentTime) {
                     console.log(`[DEBUG] MATCH FOUND! Task: "${task.task}" at ${task.time}`);
                     
@@ -111,7 +110,6 @@ function startScheduler() {
             console.error('[ERROR] A critical error occurred in the scheduler interval:', e);
         }
 
-        // Очистка кэша в полночь
         if (currentTime === '00:00') {
             console.log('[SCHEDULER] Performing daily cleanup of notifications cache.');
             sentNotifications.clear();
@@ -126,7 +124,7 @@ startScheduler(); // Запускаем планировщик
 // --- Команды бота ---
 bot.onText(/\/start/, msg => {
   const chatId = msg.chat.id;
-  bot.sendMessage(chatId, '👋 Привет! Я бот для напоминаний. Отладочный режим включен. Я буду присылать уведомления о задачах по расписанию.');
+  bot.sendMessage(chatId, '👋 Привет! Я бот для напоминаний. Отладочный режим включен.');
   
   if (!chatIds.has(chatId)) {
     chatIds.add(chatId);
@@ -137,15 +135,46 @@ bot.onText(/\/start/, msg => {
   }
 });
 
-// Остальные команды остаются без изменений
 bot.onText(/\/plan_today/, msg => {
-    // ... ваш код для /plan_today
+  const now = DateTime.now().setZone(TIMEZONE);
+  const today = now.toFormat('cccc').toLowerCase();
+  
+  try {
+    const schedule = JSON.parse(fs.readFileSync(SCHEDULE_FILE, 'utf-8'));
+    const tasks = schedule[today] || [];
+    
+    const formatted = tasks.map(t => `📌 ${t.time} — ${t.task}`).join('\n');
+    const message = `🗓 **План на сегодня (${now.toFormat('dd.MM.yyyy')})**:\n\n${formatted || 'Сегодня задач нет.'}`;
+    
+    bot.sendMessage(msg.chat.id, message, { parse_mode: 'Markdown' });
+  } catch (e) {
+    console.error('[ERROR] Could not read or parse schedule.json for /plan_today');
+    bot.sendMessage(msg.chat.id, 'Произошла ошибка при чтении расписания.');
+  }
 });
+
 bot.onText(/\/next_task/, msg => {
-    // ... ваш код для /next_task
+  const now = DateTime.now().setZone(TIMEZONE);
+  const today = now.toFormat('cccc').toLowerCase();
+  
+  try {
+    const schedule = JSON.parse(fs.readFileSync(SCHEDULE_FILE, 'utf-8'));
+    const tasks = schedule[today] || [];
+
+    const nextTask = tasks.find(task => {
+        const taskTime = DateTime.fromFormat(task.time, 'HH:mm', { zone: TIMEZONE });
+        return taskTime > now;
+    });
+
+    if (nextTask) {
+        bot.sendMessage(msg.chat.id, `⏭ **Следующая задача:**\n${nextTask.time} — ${nextTask.task}`, { parse_mode: 'Markdown' });
+    } else {
+        bot.sendMessage(msg.chat.id, '✅ Все задачи на сегодня выполнены!');
+    }
+  } catch (e) {
+    console.error('[ERROR] Could not read or parse schedule.json for /next_task');
+    bot.sendMessage(msg.chat.id, 'Произошла ошибка при чтении расписания.');
+  }
 });
 
-console.log('[SETUP] Bot is starting with Webhook configuration...');
-
-```
-
+console.log('[SETUP] Bot starting up...');
