@@ -201,13 +201,37 @@ bot.onText(/\/del (\w+) (\d+)/, (msg, match) => {
 
 // Старые команды `/plan_today` и `/next_task` остаются без изменений
 
-bot.onText(/\/plan_today/, (msg) => {
-    // ... ваш код
-});
-bot.onText(/\/next_task/, (msg) => {
-    // ... ваш код
+bot.onText(/\/plan_today/, msg => {
+  const now = DateTime.now().setZone(TIMEZONE);
+  const today = now.toFormat('cccc').toLowerCase();
+  
+  const schedule = JSON.parse(fs.readFileSync(SCHEDULE_FILE, 'utf-8'));
+  const tasks = schedule[today] || [];
+  
+  const formatted = tasks.map(t => `📌 ${t.time} — ${t.task}`).join('\n');
+  const message = `🗓 **План на сегодня (${now.toFormat('dd.MM.yyyy')})**:\n\n${formatted || 'Сегодня задач нет.'}`;
+  
+  bot.sendMessage(msg.chat.id, message, { parse_mode: 'Markdown' });
 });
 
+bot.onText(/\/next_task/, msg => {
+  const now = DateTime.now().setZone(TIMEZONE);
+  const today = now.toFormat('cccc').toLowerCase();
+  
+  const schedule = JSON.parse(fs.readFileSync(SCHEDULE_FILE, 'utf-8'));
+  const tasks = schedule[today] || [];
+
+  const nextTask = tasks.find(task => {
+    const taskTime = DateTime.fromFormat(task.time, 'HH:mm', { zone: TIMEZONE });
+    return taskTime > now;
+  });
+
+  if (nextTask) {
+    bot.sendMessage(msg.chat.id, `⏭ **Следующая задача:**\n${nextTask.time} — ${nextTask.task}`, { parse_mode: 'Markdown' });
+  } else {
+    bot.sendMessage(msg.chat.id, '✅ Все задачи на сегодня выполнены!');
+  }
+});
 
 console.log('[SETUP] Bot is fully configured and running.');
 ```
