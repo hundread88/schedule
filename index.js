@@ -19,6 +19,12 @@ const bot = new TelegramBot(BOT_TOKEN);
 const app = express();
 app.use(express.json());
 
+// --- Роут для UptimeRobot ---
+// Этот URL будет всегда отвечать "OK", чтобы UptimeRobot был доволен
+app.get('/health', (req, res) => {
+    res.status(200).send('OK');
+});
+
 // --- Настройка Webhook ---
 bot.setWebHook(`${WEBHOOK_URL}/bot${BOT_TOKEN}`)
   .then(() => console.log(`[SETUP] Webhook successfully set.`))
